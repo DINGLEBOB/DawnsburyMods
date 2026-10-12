@@ -79,7 +79,6 @@ namespace Inventor
 
             var acceleratedMobilityFeat = ModManager.RegisterFeatName("InventorAcceleratedMobility", "Accelerated Mobility");
             var advancedRangefinderFeat = ModManager.RegisterFeatName("InventorAdvancedRangefinder", "Advanced Rangefinder");
-            var flightChassisFeat = ModManager.RegisterFeatName("InventorFlightChassis", "Flight Chassis");
             var hamperingStrikesFeat = ModManager.RegisterFeatName("InventorHamperingStrikes", "Hampering Strikes");
             var harmonicOscillatorFeat = ModManager.RegisterFeatName("InventorHarmonicOscillator", "Harmonic Oscillator");
             var heftyCompositionFeat = ModManager.RegisterFeatName("InventorHeftyComposition", "Hefty Composition");
@@ -99,6 +98,7 @@ namespace Inventor
             var densePlatingFeat = ModManager.RegisterFeatName("InventorDensePlating", "Dense Plating");
             var durableConstructionFeat = ModManager.RegisterFeatName("InventorDurableConstruction", "Durable Construction");
             //var enhancedResistanceFeat = ModManager.RegisterFeatName("InventorEnhancedResistance", "Enhanced Resistance");
+            var flightChassisFeat = ModManager.RegisterFeatName("InventorFlightChassis", "Flight Chassis");
             var hyperBoostersFeat = ModManager.RegisterFeatName("InventorHyperBoosters", "Hyper Boosters");
             var inconspicuousAppearanceFeat = ModManager.RegisterFeatName("InventorInconspicuousAppearance", "Inconspicuous Appearance");
             var layeredMeshFeat = ModManager.RegisterFeatName("InventorLayeredMesh", "Layered Mesh");
@@ -266,10 +266,11 @@ namespace Inventor
                     values.SetProficiency(Trait.Unarmed, Proficiency.Expert);
                     values.SetProficiency(Trait.Simple, Proficiency.Expert);
                     values.SetProficiency(Trait.Martial, Proficiency.Expert);
-                    values.SetProficiency(Trait.Reflex, Proficiency.Expert);
                 });
                 sheet.AddAtLevel(7, (CalculatedCharacterSheetValues values) =>
                 {
+                    values.SetProficiency(Trait.Reflex, Proficiency.Expert);
+
                     sheet.GrantFeat(FeatName.MasterCrafting);
 
                     if (values.HasFeat(armorInnovationFeat))
@@ -298,6 +299,10 @@ namespace Inventor
                     {
                         values.AddSelectionOption(new SingleFeatSelectionOption("OffensiveBoost", "Offensive Boost", 9, (Feat ft) => ft.ToTechnicalName().StartsWith("OffensiveBoost:")));
                     }
+                });
+                sheet.AddAtLevel(15, (CalculatedCharacterSheetValues values) =>
+                {
+                    sheet.GrantFeat(FeatName.LegendaryCrafting);
                 });
             }).WithOnCreature((Creature creature) =>
             {
@@ -522,17 +527,6 @@ namespace Inventor
                 });
             });
 
-            yield return new Feat(flightChassisFeat, "You fit your construct with a means of flight, such as adding rotors or rebuilding it with wings and a lightweight construction.", "Your innovation gains a fly Speed of 25 feet.", new() { modificationTrait, initialModificationTrait, constructTrait }, null).WithOnSheet((CalculatedCharacterSheetValues sheet) =>
-            {
-                sheet.RangerBenefitsToCompanion += (companion, inventor) =>
-                {
-                    if (IsConstructCompanion(companion) && inventor.HasFeat(constructInnovationFeatName))
-                    {
-                        companion.AddQEffect(QEffect.Flying());
-                    }
-                };
-            });
-
             yield return new Feat(hamperingStrikesFeat, "You've added long, snagging spikes to your weapon, which you can use to impede your foes' movement.", "The melee weapon in your left hand at the start of combat gains the disarm and versatile piercing traits.", new() { modificationTrait, initialModificationTrait, weaponTrait }, null).WithOnCreature(delegate (Creature creature)
             {
                 creature.AddQEffect(new("Hampering Strikes", "The melee weapon in your left hand at the start of combat gains the disarm and versatile piercing traits.")
@@ -751,6 +745,17 @@ namespace Inventor
                     if (IsConstructCompanion(companion) && inventor.HasFeat(constructInnovationFeatName))
                     {
                         companion.MaxHP += inventor.Level;
+                    }
+                };
+            });
+
+            yield return new Feat(flightChassisFeat, "You fit your construct with a means of flight, such as adding rotors or rebuilding it with wings and a lightweight construction.", "Your innovation gains a fly Speed of 25 feet.", new() { modificationTrait, breakthroughModificationTrait, constructTrait }, null).WithOnSheet((CalculatedCharacterSheetValues sheet) =>
+            {
+                sheet.RangerBenefitsToCompanion += (companion, inventor) =>
+                {
+                    if (IsConstructCompanion(companion) && inventor.HasFeat(constructInnovationFeatName))
+                    {
+                        companion.AddQEffect(QEffect.Flying());
                     }
                 };
             });
