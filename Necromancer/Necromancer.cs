@@ -1,4 +1,5 @@
-﻿using Dawnsbury.Audio;
+﻿using Dawnsbury;
+using Dawnsbury.Audio;
 using Dawnsbury.Auxiliary;
 using Dawnsbury.Core;
 using Dawnsbury.Core.Animations;
@@ -48,6 +49,7 @@ namespace Necromancer
 
         private enum NecromancerSpell
         {
+            BindHeroicSpirit,
             BloodInfusion,
             BoneSpear,
             BonyBarrage,
@@ -58,6 +60,7 @@ namespace Necromancer
             LifeTap,
             MuscleBarrier,
             NecroticBomb,
+            SanguineTransference,
             SongOfTheSoul,
             ThrallCharge,
             ZombieHorde
@@ -112,6 +115,7 @@ namespace Necromancer
             var lifeTapFeat = ModManager.RegisterFeatName("NecromancerLifeTap", "Life Tap");
 
             var deathlyScreamFeat = ModManager.RegisterFeatName("NecromancerDeathlyScream", "Deathly Scream");
+            var bindHeroicSpiritFeat = ModManager.RegisterFeatName("NecromancerBindHeroicSpirit", "Bind Heroic Spirit");
             var bodyShieldFeat = ModManager.RegisterFeatName("NecromancerBodyShield", "Body Shield");
             var boneBurstFeat = ModManager.RegisterFeatName("NecromancerBoneBurst", "Bone Burst");
             var bonyBarrageFeat = ModManager.RegisterFeatName("NecromancerBoBonyBarrage", "Bony Barrage");
@@ -126,7 +130,9 @@ namespace Necromancer
             var mobileThrallsFeat = ModManager.RegisterFeatName("NecromancerMobileThralls", "Mobile Thralls");
             var muscleBarrierFeat = ModManager.RegisterFeatName("NecromancerMuscleBarrier", "Muscle Barrier");
             var necroticBomberFeat = ModManager.RegisterFeatName("NecromancerNecroticBomber", "Necrotic Bomber");
+            var reachOfTheDeadFeat = ModManager.RegisterFeatName("NecromancerReachOfTheDead", "Reach of the Dead");
             var reclaimPowerFeat = ModManager.RegisterFeatName("NecromancerReclaimPower", "Reclaim Power");
+            var sanguineTransferenceFeat = ModManager.RegisterFeatName("NecromancerSanguineTransference", "Sanguine Transference");
             var songOfTheSoulFeat = ModManager.RegisterFeatName("NecromancerSongOfTheSoul", "Song of the Soul");
             var theHallowedDeadFeat = ModManager.RegisterFeatName("NecromancerTheHallowedDead", "The Hallowed Dead");
             var theUnholyDeadFeat = ModManager.RegisterFeatName("NecromancerTheUnholyDead", "The Unholy Dead");
@@ -351,7 +357,7 @@ namespace Necromancer
 
             #region Fatal Methods
 
-            yield return new Feat(puppeteerFeat, "You prefer to study life and death from afar. You gain the Consume Thrall action and the thrall proliferation ability.", "", [FatalMethodTrait], null)
+            yield return new Feat(puppeteerFeat, "You prefer to study life and death from afar. You gain the Consume Thrall action and the thrall proliferation ability.", "{b}Reaper's Edge {icon:FreeAction}{/b} {b}Frequency{/b} once per day; {b}Effects{/b} You destroy one thrall within 30 feet of you and regain 1 Focus Point.\n{b}Thrall Proliferation{/b} Once per round when you cast create thrall, you can create one additional thrall in range.", [FatalMethodTrait], null)
                 .WithOnCreature((Creature featUser) =>
                 {
                     featUser.AddQEffect(new("Thrall Proliferation", "Once per round when you cast create thrall, you can create one additional thrall in range.")
@@ -384,7 +390,7 @@ namespace Necromancer
                     });
                 });
 
-            yield return new Feat(reaperFeat, "You study flesh up close by clashing blade against bone. You gain the reaper’s edge and thrall teamwork abilities.", "", [FatalMethodTrait], null)
+            yield return new Feat(reaperFeat, "You study flesh up close by clashing blade against bone. You gain the reaper’s edge and thrall teamwork abilities.", "{b}Reaper's Edge{/b} You become trained in martial weapons and medium armor. At 11th level, you become an expert in martial weapons, and at 13th you become an expert in medium armor.\n{b}Thrall Teamwork{/b} Once per round after you cast create thrall, you can make a melee Strike as a free action against a creature within your melee reach that is adjacent to at least one of your thralls.", [FatalMethodTrait], null)
                 .WithOnSheet((CalculatedCharacterSheetValues values) =>
                 {
                     values.SetProficiency(Trait.Martial, Proficiency.Trained);
@@ -600,6 +606,92 @@ namespace Necromancer
                             Source = necromancer,
                             AddExtraKindedDamageOnStrike = (_, _) => new(DiceFormula.FromText($"{(creature.Level >= 10 ? 2 : 1)}"), DamageKind.Evil)
                         });
+                    })
+                });
+            });
+
+            yield return new TrueFeat(reachOfTheDeadFeat, 1, "You have turned your necromancy against the divine powers that seek to stop you from achieving your unholy goals.", "Strikes your thralls make deal 1 additional evil damage. This additional good damage increases to 2 at 10th level.", [NecromancerTrait, Trait.Metamagic, Trait.Concentrate, Trait.ClassFeat])
+            .WithActionCost(0)
+            .WithIllustration(IllustrationName.MetamagicReach)
+            .WithOnCreature((Creature creature) =>
+            {
+                creature.AddQEffect(new("Reach of the Dead", $"You can destroy a thrall to have a spell originate from that thrall's space.")
+                {
+                    MetamagicProvider = new MetamagicProvider("Reach of the Dead", IllustrationName.MetamagicReach, attachedToSpell: false, delegate (CombatAction combatAction)
+                    {
+                        Target? originalTarget = null;
+
+                        if (combatAction.Target is CreatureTarget creatureTarget)
+                        {
+                            if (creatureTarget.RangeKind != RangeKind.Ranged)
+                            {
+                                return null;
+                            }
+
+                            originalTarget = creatureTarget;
+                        }
+                        else if (combatAction.Target is BurstAreaTarget burstTarget)
+                        {
+                            originalTarget = burstTarget;
+                        }
+
+                        if (originalTarget == null)
+                        {
+                            return null;
+                        }
+
+                        var duplicateSpell = Spell.DuplicateSpell(combatAction).CombatActionSpell;
+                        duplicateSpell.Target = CreateThrallTarget(12);
+                        duplicateSpell.EffectOnChosenTargets = null;
+                        duplicateSpell.EffectOnChosenTargetsBeforeRolls = null;
+                        duplicateSpell.EffectOnOneTarget = null;
+                        duplicateSpell.WithSavingThrow(null);
+                        duplicateSpell.Traits.Remove(Trait.Mental);
+
+                        duplicateSpell.Tag = Spell.DuplicateSpell(combatAction).CombatActionSpell;
+
+                        duplicateSpell.EffectOnOneTarget = async (action, user, target, _) =>
+                        {
+                            if (action.SpellcastingSource == null)
+                            {
+                                return;
+                            }
+
+                            target.Spellcasting = new(target);
+                            target.Spellcasting.Sources.Add(new(target.Spellcasting, SpellcastingKind.Prepared, Ability.Intelligence, Trait.Occult, NecromancerTrait));
+                            target.WithSpellProficiencyBasedOnSpellAttack(action.SpellcastingSource.GetSpellAttack(), Ability.Intelligence);
+
+                            if (action.Tag is CombatAction spell)
+                            {
+                                spell.Owner = target;
+                                spell.ActionCost = 0;
+                                spell.Traits.Add(Trait.DoesNotProvoke);
+
+                                var priorEffects = target.QEffects.ToList();
+
+                                if (await target.Battle.GameLoop.FullCast(spell))
+                                {
+                                    var newEffects = target.QEffects.Where(effect => !priorEffects.Contains(effect));
+
+                                    foreach (var newEffect in newEffects)
+                                    {
+                                        newEffect.Owner = user;
+                                        user.AddQEffect(newEffect);
+                                    }
+
+                                    spell.Owner = user;
+                                    await KillThrall(target);
+                                }
+                                else
+                                {
+                                    user.Actions.RevertExpendingOfResources(action.ActionCost, spell);
+                                }
+                            }
+                        };
+
+                        
+
+                        return duplicateSpell;
                     })
                 });
             });
@@ -875,7 +967,14 @@ namespace Necromancer
             #endregion
 
             #region Level 6 Feats
-            
+
+            yield return new TrueFeat(bindHeroicSpiritFeat, 6, "You bind the spirit of a dead hero into you, gaining some of their talent.", "You gain the {i}bind heroic spirit{/i} focus spell and a focus pool of 1 Focus Point.", [NecromancerTrait, Trait.ClassFeat])
+                .WithPrerequisite(reaperFeat, "Reaper")
+                .WithOnSheet(delegate (CalculatedCharacterSheetValues sheet)
+                {
+                    sheet.AddFocusSpellAndFocusPoint(NecromancerTrait, Ability.Intelligence, NecromancerSpells[NecromancerSpell.BindHeroicSpirit]);
+                }).WithRulesBlockForSpell(NecromancerSpells[NecromancerSpell.BindHeroicSpirit], NecromancerTrait).WithIllustration(IllustrationName.Heroism);
+
             yield return new TrueFeat(boneBurstFeat, 6, "You can capitalize on your enemies' distraction with exploding thralls.", "You can take the {i}bone burst{/i} reaction.", [NecromancerTrait, Trait.ClassFeat])
                 .WithActionCost(-2)
                 .WithIllustration(IllustrationName.ShardStrike)
@@ -965,6 +1064,7 @@ namespace Necromancer
                 });
 
             yield return new TrueFeat(conjurerOfCorpsesFeat, 6, "You can call forth many kinds of undead to do your bidding.", "You learn the summon undead spell. You gain an additional spell slot each day at your highest level of necromancer spell slots. You can prepare only the summon undead spell in this slot.", [NecromancerTrait, Trait.ClassFeat])
+                .WithPrerequisite(puppeteerFeat, "Puppeteer")
                 .WithOnSheet(delegate (CalculatedCharacterSheetValues sheetI)
                 {
                     sheetI.AtEndOfRecalculation = (sheet) =>
@@ -1293,11 +1393,17 @@ namespace Necromancer
                     });
                 });
 
+            yield return new TrueFeat(sanguineTransferenceFeat, 8, "You diffuse your spirit into your blood before escaping your body and transferring your blood and soul into a thrall.", "You gain the {i}sanguine transference{/i} focus spell and a focus pool of 1 Focus Point.", [NecromancerTrait, Trait.ClassFeat])
+                .WithOnSheet(delegate (CalculatedCharacterSheetValues sheet)
+                {
+                    sheet.AddFocusSpellAndFocusPoint(NecromancerTrait, Ability.Intelligence, NecromancerSpells[NecromancerSpell.SanguineTransference]);
+                }).WithRulesBlockForSpell(NecromancerSpells[NecromancerSpell.SanguineTransference], NecromancerTrait).WithIllustration(IllustrationName.BoilBlood);
+
             yield return new TrueFeat(vitalThrallsFeat, 8, "You can imbue your thralls with nodes of positive energy.", "When one of your thralls dies, it explodes in a burst of positive energy. Each friendly living creature within 15 feet of it gains a number of temporary Hit Points equal to half your level. Also, whenever one of your thralls would take positive damage from an effect requiring a Fortitude save, it attempts a DC 15 flat check to take no damage.", [NecromancerTrait, Trait.ClassFeat, Trait.Homebrew])
                 .WithIllustration(IllustrationName.Bless)
                 .WithOnCreature((Creature creature) =>
                 {
-                    creature.AddQEffect(new("Vital Thralls", "Your thralls grant temporary hit points to nearby allies when they die, and whenever one of your thralls would take positive damage from an effect requiring a Fortitude save, it attempts a DC 15 flat check to take no damage.")
+                    creature.AddQEffect(new("Vital Thralls", "Your thralls grant temporary hit points to nearby living allies when they die, and whenever one of your thralls would take positive damage from an effect requiring a Fortitude save, it attempts a DC 15 flat check to take no damage.")
                     {
                         Source = creature,
                         Tag = new NecromancerBenefitToThralls(async (necromancer, thrall) =>
@@ -1330,7 +1436,10 @@ namespace Necromancer
 
                                     foreach (var ally in alliesInRange)
                                     {
-                                        ally.GainTemporaryHP(tempHPAmount);
+                                        if (!ally.HasTrait(Trait.Undead))
+                                        {
+                                            ally.GainTemporaryHP(tempHPAmount);
+                                        }
                                     }
                                 })
                             });
@@ -1457,12 +1566,55 @@ namespace Necromancer
 
         public static void LoadSpells()
         {
+            #region Bind Heroic Spirit
+
+            NecromancerSpells[NecromancerSpell.BindHeroicSpirit] = ModManager.RegisterNewSpell("Bind Heroic Spirit", 3, (spellId, spellcaster, spellLevel, inCombat, spellInformation) =>
+            {
+                var mainSpell = Spells.CreateModern(IllustrationName.Heroism, "Bind Heroic Spirit",
+                    [NecromancerTrait, Trait.Focus, GraveTrait, Trait.Necromancy, Trait.Uncommon],
+                    "You turn one of your thralls into a conduit to bind the spirit of a hero into your body.",
+                    $"Destroy the target thrall and gain a +{(spellLevel >= 6 ? 2 : 1)} status bonus to attack rolls and saving throws. Additionally, whenever you critically hit a creature with a Strike, you can create a thrall in a space adjacent to the target of the Strike, as your heroic attack inspires other spirits to join you on the battlefield.",
+                    CreateThrallTarget(6), 1, null)
+                .WithActionCost(2)
+                .WithHeightenedAtSpecificLevel(3, 6, inCombat, "The status bonus increases to +2.")
+                .WithEffectOnEachTarget(async delegate (CombatAction spell, Creature user, Creature target, CheckResult _)
+                {
+                    var bonus = spell.SpellLevel >= 6 ? 2 : 1;
+
+                    user.AddQEffect(new QEffect("Bind Heroic Spirit", $"You have +{bonus} to attack rolls and saving throws. Whenever you critically hit a creature with a Strike, you can create a thrall in a space adjacent to the target of the Strike.", ExpirationCondition.Never, user, IllustrationName.Heroism)
+                    {
+                        BonusToAttackRolls = (QEffect effect, CombatAction action, Creature? arg3) => new Bonus(bonus, BonusType.Status, "Bind Heroic Spirit"),
+                        BonusToDefenses = (QEffect effect, CombatAction? action, Defense defense) => (!defense.IsSavingThrow()) ? null : new Bonus(bonus, BonusType.Status, "Bind Heroic Spirit"),
+                        AfterYouTakeActionAgainstTarget = async (QEffect effect, CombatAction action, Creature target2, CheckResult result) =>
+                        {
+                            if (result < CheckResult.CriticalSuccess || action.Item == null)
+                            {
+                                return;
+                            }
+
+                            var createThrall = CreateCreateThrall(effect.Owner, effect.Owner.Level / 2 + 1);
+                            ((TileTarget)createThrall.Target).AdditionalTargetingRequirement = (_, tile) => tile.IsAdjacentTo(target2.Occupies) ? Usability.Usable : Usability.NotUsableOnThisCreature(null);
+
+                            await effect.Owner.Battle.GameLoop.FullCast(createThrall);
+                        }
+                    });
+
+                    await KillThrall(target);
+                });
+
+                mainSpell.ProjectileCount = 0;
+
+                return mainSpell;
+            });
+
+            #endregion
+
             #region Blood Infusion
 
             NecromancerSpells[NecromancerSpell.BloodInfusion] = ModManager.RegisterNewSpell("Blood Infusion", 1, (spellId, spellcaster, spellLevel, inCombat, spellInformation) =>
             {
                 var mainSpell = Spells.CreateModern(IllustrationName.BloodVendetta, "Blood Infusion",
-                    [NecromancerTrait, Trait.Focus, GraveTrait, Trait.Necromancy, Trait.Uncommon],
+                    [NecromancerTrait, Trait.Focus, GraveTrait, Trait.Transmutation, Trait.Uncommon],
                     "You pull blood and other fluid from a thrall before embedding it into another creature. You then slowly and painfully begin to extract that blood from the creature.",
                     $"A creature within 15 feet of the target thrall becomes filled with blood. The thrall is destroyed, and the creature must attempt a Fortitude saving throw. {S.FourDegreesOfSuccess("The target is unaffected.", $"The target loses any immunity to bleed and is considered to be a creature with blood for the purposes of effects and requirements. The creature takes {spellLevel} persistent bleed damage.", $"As success, but the persistent bleed damage is {spellLevel}d6.", $"As success, but the persistent bleed damage is {spellLevel * 2}d6.")}",
                     CreateThrallTarget(6), 1, null)
@@ -1470,7 +1622,7 @@ namespace Necromancer
                 .WithHeighteningNumerical(spellLevel, 1, inCombat, 1, "The persistent bleed damage increases by 1 on a success, 1d6 on a failure, and 2d6 on a critical failure.")
                 .WithEffectOnEachTarget(async delegate (CombatAction spell, Creature user, Creature target, CheckResult _)
                 {
-                    var commandThrallInfuseBlood = new CombatAction(target, spell.Illustration, "Blood Infusion", [Trait.Spell, Trait.Occult, Trait.Necromancy, NecromancerTrait], "", Target.Ranged(3))
+                    var commandThrallInfuseBlood = new CombatAction(target, spell.Illustration, "Blood Infusion", [Trait.Spell, Trait.Occult, Trait.Transmutation, NecromancerTrait], "", Target.Ranged(3))
                     .WithActionCost(0)
                     .WithSoundEffect(SfxName.SprayPerfume)
                     .WithSavingThrow(new(Defense.Fortitude, spell.SpellcastingSource?.GetSpellSaveDC(spell) ?? 0))
@@ -1532,7 +1684,7 @@ namespace Necromancer
             NecromancerSpells[NecromancerSpell.BoneSpear] = ModManager.RegisterNewSpell("Bone Spear", 1, (spellId, spellcaster, spellLevel, inCombat, spellInformation) =>
             {
                 var mainSpell = Spells.CreateModern(IllustrationName.BoneSpray, "Bone Spear",
-                    [NecromancerTrait, Trait.Focus, GraveTrait, Trait.Necromancy, Trait.Uncommon],
+                    [NecromancerTrait, Trait.Focus, GraveTrait, Trait.Evocation, Trait.Uncommon],
                     "You shape a thrall into a spear of jagged bone.",
                     $"Destroy the target thrall, and each creature in a 15-foot line originating from the thrall’s former space takes {spellLevel * 2}d6 piercing damage with a basic Reflex save.",
                     CreateThrallTarget(6), 1, null)
@@ -1540,7 +1692,7 @@ namespace Necromancer
                 .WithHeighteningOfDamageEveryLevel(spellLevel, 1, inCombat, "2d6")
                 .WithEffectOnEachTarget(async delegate (CombatAction spell, Creature user, Creature target, CheckResult _)
                 {
-                    var commandThrallToBoneSpearCombatAction = new CombatAction(target, spell.Illustration, "Bone Spear", [Trait.Spell, Trait.Occult, Trait.Necromancy, NecromancerTrait], "", Target.Line(3))
+                    var commandThrallToBoneSpearCombatAction = new CombatAction(target, spell.Illustration, "Bone Spear", [Trait.Spell, Trait.Occult, Trait.Evocation, NecromancerTrait], "", Target.Line(3))
                     .WithActionCost(0)
                     .WithSoundEffect(SfxName.BoneSpray)
                     .WithProjectileCone(VfxStyle.BasicProjectileCone(IllustrationName.ArrowPointedProjectile))
@@ -1759,7 +1911,7 @@ namespace Necromancer
                     "You call forth a lumbering mass of fleshy limbs.",
                     $"You conjure forth a thrall that has {spellLevel * 15} Hit Points. Whenever an enemy begins its turn within reach of this thrall, it must succeed at a Fortitude saving throw or become grabbed by the thrall for 1 round or until it Escapes. Once per round on subsequent turns, you can Sustain the spell to have the thrall Stride up to 15 feet, using its many limbs to drag itself across the ground.",
                     Target.Self(), 4, null)
-                .WithActionCost(2)
+                .WithActionCost(1)
                 .WithEffectOnSelf(async delegate (CombatAction spell, Creature user)
                 {
                     var identifier = Guid.NewGuid();
@@ -1803,14 +1955,14 @@ namespace Necromancer
             NecromancerSpells[NecromancerSpell.DeadWeight] = ModManager.RegisterNewSpell("Dead Weight", 1, (spellId, spellcaster, spellLevel, inCombat, spellInformation) =>
             {
                 var mainSpell = Spells.CreateModern(IllustrationName.Grapple, "Dead Weight",
-                    [NecromancerTrait, Trait.Focus, GraveTrait, Trait.Necromancy, Trait.Uncommon],
+                    [NecromancerTrait, Trait.Focus, GraveTrait, Trait.Transmutation, Trait.Uncommon],
                     "You command a thrall to hurl itself on another creature, fusing their flesh together.",
                     $"The target thrall launches itself at a creature within 15 feet, and the target must attempt a Fortitude saving throw. The target thrall is destroyed. {S.FourDegreesOfSuccess("The target is unaffected.", "The target is off-guard for 1 round.", "The target slowed 1 and off-guard for 1 round.", "The target is slowed 2 and off-guard for 1 round.")}",
                     CreateThrallTarget(6), 1, null)
                 .WithActionCost(2)
                 .WithEffectOnEachTarget(async delegate (CombatAction spell, Creature user, Creature target, CheckResult _)
                 {
-                    var commandThrallToDeadWeightAction = new CombatAction(target, spell.Illustration, "Dead Weight", [Trait.Spell, Trait.Occult, Trait.Necromancy, NecromancerTrait], "", Target.Ranged(3))
+                    var commandThrallToDeadWeightAction = new CombatAction(target, spell.Illustration, "Dead Weight", [Trait.Spell, Trait.Occult, Trait.Transmutation, NecromancerTrait], "", Target.Ranged(3))
                     .WithActionCost(0)
                     .WithSoundEffect(SfxName.RaiseShield)
                     .WithSavingThrow(new(Defense.Fortitude, spell.SpellcastingSource?.GetSpellSaveDC(spell) ?? 0))
@@ -1859,7 +2011,7 @@ namespace Necromancer
             NecromancerSpells[NecromancerSpell.DeathlyScream] = ModManager.RegisterNewSpell("Deathly Scream", 1, (spellId, spellcaster, spellLevel, inCombat, spellInformation) =>
             {
                 var mainSpell = Spells.CreateModern(IllustrationName.Paranoia, "Deathly Scream",
-                    [NecromancerTrait, Trait.Auditory, Trait.Emotion, Trait.Fear, Trait.Focus, GraveTrait, Trait.Necromancy, Trait.Uncommon],
+                    [NecromancerTrait, Trait.Auditory, Trait.Emotion, Trait.Fear, Trait.Focus, GraveTrait, Trait.Enchantment, Trait.Uncommon],
                     "Your thrall lets forth a spectral scream that pierces the mind. While the sound is loud, only those closest can feel the true sting of death in it.",
                     $"Each creature within a 5-foot emanation of the target thrall takes {spellLevel}d4 mental damage depending on its Will save.{S.FourDegreesOfSuccess("The target is unaffected.", "The target takes half damage", "The target takes full damage and is frightened 1.", "The target takes double damage and is frightened 2.")}",
                     CreateThrallTarget(6), 1, null)
@@ -1867,7 +2019,7 @@ namespace Necromancer
                 .WithHeighteningOfDamageEveryLevel(spellLevel, 1, inCombat, "1d4")
                 .WithEffectOnEachTarget(async delegate (CombatAction spell, Creature user, Creature target, CheckResult _)
                 {
-                    var commandThrallToTakeAction = new CombatAction(target, spell.Illustration, "Deathly Scream", [Trait.Spell, Trait.Occult, Trait.Necromancy, Trait.Auditory, Trait.Emotion, Trait.Fear, Trait.Mental, NecromancerTrait], "", Target.SelfExcludingEmanation(1))
+                    var commandThrallToTakeAction = new CombatAction(target, spell.Illustration, "Deathly Scream", [Trait.Spell, Trait.Occult, Trait.Auditory, Trait.Emotion, Trait.Fear, Trait.Mental, Trait.Enchantment, NecromancerTrait], "", Target.SelfExcludingEmanation(1))
                     .WithActionCost(0)
                     .WithSoundEffect(SfxName.HauntingHymn)
                     .WithSavingThrow(new(Defense.Will, spell.SpellcastingSource?.GetSpellSaveDC(spell) ?? 0))
@@ -1983,7 +2135,7 @@ namespace Necromancer
                 .WithHeighteningNumerical(spellLevel, 1, inCombat, 1, "The temporary Hit Points increase by 10.")
                 .WithEffectOnEachTarget(async delegate (CombatAction spell, Creature user, Creature target, CheckResult _)
                 {
-                    var commandThrallToTakeAction = new CombatAction(target, spell.Illustration, "Muscle Barrier", [Trait.Spell, Trait.Occult, Trait.Necromancy, NecromancerTrait], "", Target.RangedFriend(3).WithAdditionalConditionOnTargetCreature((user, target) => !target.HasEffect(SummonedThrallID) ? Usability.Usable : Usability.NotUsableOnThisCreature("thrall")))
+                    var commandThrallToTakeAction = new CombatAction(target, spell.Illustration, "Muscle Barrier", [Trait.Spell, Trait.Occult, Trait.Transmutation, NecromancerTrait], "", Target.RangedFriend(3).WithAdditionalConditionOnTargetCreature((user, target) => !target.HasEffect(SummonedThrallID) ? Usability.Usable : Usability.NotUsableOnThisCreature("thrall")))
                     .WithActionCost(0)
                     .WithSoundEffect(SfxName.RaiseShield)
                     .WithEffectOnEachTarget(async (CombatAction action, Creature user2, Creature target2, CheckResult result) =>
@@ -2091,6 +2243,32 @@ namespace Necromancer
 
             #endregion
 
+            #region Sanguine Transference
+
+            NecromancerSpells[NecromancerSpell.SanguineTransference] = ModManager.RegisterNewSpell("Sanguine Transference", 4, (spellId, spellcaster, spellLevel, inCombat, spellInformation) =>
+            {
+                var mainSpell = Spells.CreateModern(IllustrationName.BoilBlood, "Sanguine Transference",
+                    [NecromancerTrait, Trait.Focus, GraveTrait, Trait.Manipulate, Trait.Necromancy, Trait.Uncommon],
+                    "You diffuse your spirit into your blood before escaping your body and transferring your blood and soul into a thrall.",
+                    "You use the target thrall to reform your body in its space, and you leave a thrall where your body once was. Your reformed body is the same as it was before the transfer. All spells and effects applied to you remain active. Tendrils of blood grab all your items as you travel and equip them to your new body as they were before the transfer. The movement of your blood doesn’t trigger any reactions.",
+                    CreateThrallTarget(12), 4, null)
+                .WithActionCost(1)
+                .WithEffectOnEachTarget(async delegate (CombatAction spell, Creature user, Creature target, CheckResult _)
+                {
+                    var targetTile = target.Occupies;
+                    var originalTile = user.Occupies;
+                    await KillThrall(target);
+
+                    user.TranslateTo(targetTile);
+
+                    user.Battle.SpawnCreature(CreateThrall(user, user.MaximumSpellRank), user.OwningFaction, originalTile);
+                });
+
+                return mainSpell;
+            });
+
+            #endregion
+
             #region Song of the Soul
 
             NecromancerSpells[NecromancerSpell.SongOfTheSoul] = ModManager.RegisterNewSpell("Song of the Soul", 1, (spellId, spellcaster, spellLevel, inCombat, spellInformation) =>
@@ -2104,7 +2282,7 @@ namespace Necromancer
                 .WithHeighteningNumerical(spellLevel, 1, inCombat, 1, "The healing increases by 1d8 and the fast healing increases by 1.")
                 .WithEffectOnEachTarget(async delegate (CombatAction spell, Creature user, Creature target, CheckResult _)
                 {
-                    var commandThrallToTakeAction = new CombatAction(target, spell.Illustration, "Song of the Soul", [Trait.Spell, Trait.Occult, Trait.Necromancy, NecromancerTrait], "", Target.RangedFriend(3))
+                    var commandThrallToTakeAction = new CombatAction(target, spell.Illustration, "Song of the Soul", [Trait.Spell, Trait.Occult, NecromancerTrait], "", Target.RangedFriend(3))
                     .WithActionCost(0)
                     .WithSoundEffect(SfxName.Choir)
                     .WithSpellInformation(spell.SpellLevel, "", null)
@@ -2185,10 +2363,10 @@ namespace Necromancer
 
             #region Thrall Charge
 
-            NecromancerSpells[NecromancerSpell.ThrallCharge] = ModManager.RegisterNewSpell("Thrall Charge", 1, (spellId, spellcaster, spellLevel, inCombat, spellInformation) =>
+            NecromancerSpells[NecromancerSpell.ThrallCharge] = ModManager.RegisterNewSpell("Thrall Charge", 0, (spellId, spellcaster, spellLevel, inCombat, spellInformation) =>
             {
                 var mainSpell = Spells.CreateModern(IllustrationName.KiStrike, "Thrall Charge",
-                    [NecromancerTrait, Trait.Cantrip, GraveTrait, Trait.Necromancy, Trait.Uncommon],
+                    [NecromancerTrait, Trait.Cantrip, GraveTrait, Trait.Transmutation, Trait.Uncommon],
                     "You urge a thrall to move and attack.",
                     "You command the target thrall to Stride and then make a Strike that deals an additional 1d6 damage. You can destroy the thrall as part of this Strike to add a status bonus to the Strike’s damage equal to this spell’s rank.",
                     CreateThrallTarget(6), 1, null)
@@ -2812,7 +2990,6 @@ namespace Necromancer
                 thrall.AddQEffect(UnmovableThrall);
             }
 
-            //TODO: Fix the attack section to result in a success instead of critical success.
             thrall.AddQEffect(new()
             {
                 Id = SummonedThrallID,
@@ -2895,7 +3072,7 @@ namespace Necromancer
 
                                     return action.Owner.Level >= 1 ? (float)action.Owner.Level * -5f - 3f : -5f;*/
 
-                                    return target.Level * -2f - 7.0f;
+                                    return target.Level * -2.0f - 7.0f;
                                     //return -10f;
                                 }
 
